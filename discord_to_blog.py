@@ -14,7 +14,7 @@ import yaml
 
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
 
-URL_RE = re.compile(".*<([^>]+)>.*")
+URL_RE = re.compile(".*<([^>]+)>")
 
 POST_TEMPLATE = """\
 Title: {title}
@@ -146,11 +146,11 @@ class MyClient(discord.Client):
             await message.delete(delay=MESSAGE_DELETE_DELAY)
             return
 
-        path = await self.make_post(message)
+        title, path = await self.make_post(message)
 
         self._pelican.run()
 
-        await self._channel.send(content=f"Created post <{self._base_url}/{path}>")
+        await self._channel.send(content=f"{message.author.mention} created a post titled \"{title}\": <{self._base_url}/{path}>")
         await message.delete()
 
     async def make_post(self, message):
@@ -183,7 +183,7 @@ class MyClient(discord.Client):
         with open(os.path.join(self._data_dir, path, "index.md"), 'wt') as f:
             f.write(output)
 
-        return path
+        return title, path
 
 
     def delete_post(self, message):
