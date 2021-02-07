@@ -25,7 +25,8 @@ Date: {date}
 
 {images}
 """
-IMAGE_TEMPLATE = "[![{filename}]({{attach}}{filename})]({{static}}{filename})"
+IMAGE_TEMPLATE = "[![{filename}]({{attach}}{thumb_filename})]({{static}}{filename})"
+IMAGE_MAX_DIMENSION = 800
 
 PELICAN_SETTINGS = {
     "USE_FOLDER_AS_CATEGORY": False,
@@ -172,15 +173,32 @@ class MyClient(discord.Client):
         images = []
         for a in message.attachments:
             filename = os.path.basename(urlparse(a.url).path).translate(CLEAN_FILENAME)
-            images.append(filename)
             with open(os.path.join(self._data_dir, path, filename), 'wb') as f:
                 await a.save(f)
+
+            # Attempt to get a thumbnail
+            #  - Only attempted if the image is too big
+            #  - Abuses the fact that the proxy_url takes width and height params
+            #  - Only keeps it if the thumbnail is smaller (ex: gif thumbs can be bigger)
+            thumb_filename = filename
+            scale = max(a.width, a.height) / IMAGE_MAX_DIMENSION
+            if scale > 1:
+                thumb_filename = "thumb_{}".format(filename)
+                thumb_path = os.path.join(self._data_dir, path, thumb_filename)
+                with open(thumb_path, 'wb') as f:
+                    a.proxy_url = "{}?width={:g}&height={:g}".format(a.proxy_url, a.width // scale, a.height // scale)
+                    await a.save(f, use_cached=True)
+                if os.path.getsize(thumb_path) >= a.size:
+                    os.remove(thumb_path)
+                    thumb_filename = filename
+
+            images.append({"filename": filename, "thumb_filename": thumb_filename})
 
         output = POST_TEMPLATE.format(
             title=title,
             date=date.strftime("%Y-%m-%d %H:%M:%S"),
             author=message.author.display_name,
-            images=" ".join(IMAGE_TEMPLATE.format(filename=x) for x in images),
+            images=" ".join(IMAGE_TEMPLATE.format(**x) for x in images),
             content=content,
         )
         with open(os.path.join(self._data_dir, path, "index.md"), 'wt') as f:
