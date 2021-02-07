@@ -12,6 +12,7 @@ import pelican
 import pelican.settings
 import yaml
 
+CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
 
 URL_RE = re.compile(".*<([^>]+)>.*")
 
@@ -167,7 +168,7 @@ class MyClient(discord.Client):
 
         images = []
         for a in message.attachments:
-            filename = os.path.basename(urlparse(a.url).path).replace(",", "").replace(" ", "_")
+            filename = os.path.basename(urlparse(a.url).path).translate(CLEAN_FILENAME)
             images.append(filename)
             with open(os.path.join(self._data_dir, path, filename), 'wb') as f:
                 await a.save(f)
