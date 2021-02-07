@@ -159,9 +159,12 @@ class MyClient(discord.Client):
 
         title, *content = content.split("\n\n", 1)
         content = content[0] if content else ""
-        if not title or len(title) > 72:
-            content = title
-            title = "Pictures from {}".format(date.strftime("%Y-%m-%d"))
+        if len(title) > 72:
+            content = f"{title}\n\n{content}"
+            title = "{}\N{HORIZONTAL ELLIPSIS}".format(title[:72])
+        elif not title:
+            content = ""
+            title = "Untitled post"
 
         path = date.strftime("%Y/%m/%d/%H-%M-%S").replace("/", os.sep)
         os.makedirs(os.path.join(self._data_dir, path), exist_ok=True)
