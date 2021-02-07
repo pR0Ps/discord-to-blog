@@ -125,7 +125,7 @@ class MyClient(discord.Client):
             # Reply to an existing message
             msg = await message.channel.fetch_message(message.reference.message_id)
             content = message.content
-            if content == "delete":
+            if content.lower() == "delete":
                 path = self.delete_post(msg)
                 if path:
                     self._pelican.run()
