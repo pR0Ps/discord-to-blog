@@ -10,6 +10,7 @@ import discord
 from discord.errors import Forbidden
 import pelican
 import pelican.settings
+import pytz
 import yaml
 
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
@@ -114,6 +115,40 @@ class MyClient(discord.Client):
 
         print("Set up the Pelican site generator")
 
+    async def dispatch_command(self, message):
+        command = message.clean_content.strip().lower()
+        is_reply = message.reference is not None
+
+        if " " in command:
+            # fast fail for garbage
+            fcn = None
+        elif is_reply:
+            fcn = getattr(self, f"cmd_reply_{command}", None)
+        else:
+            fcn = getattr(self, f"cmd_{command}", None)
+
+        if not fcn:
+            if is_reply:
+                # Consider the message handled if it's an invalid reply
+                await message.reply(f"ERROR: unknown reply action '{command}'", delete_after=MESSAGE_DELETE_DELAY)
+                return True
+            return False
+
+        kwargs = {
+            "message": message
+        }
+
+        if is_reply:
+            kwargs["parent"] = await message.channel.fetch_message(message.reference.message_id)
+
+        try:
+            await fcn(**kwargs)
+        except TypeError:
+            await message.reply(f"ERROR: wrong arguments for command '{command}'", delete_after=MESSAGE_DELETE_DELAY)
+        except Exception as e:
+            await message.reply(f"ERROR: failed to run command ({e.__class__.__name__}: {e})", delete_after=MESSAGE_DELETE_DELAY)
+        return True
+
     async def on_message(self, message):
         # Ignore self
         if message.author == self.user:
@@ -122,40 +157,29 @@ class MyClient(discord.Client):
         elif message.channel != self._channel:
             return
 
-        if message.reference is not None:
-            # Reply to an existing message
-            msg = await message.channel.fetch_message(message.reference.message_id)
-            content = message.content
-            if content.lower() == "delete":
-                path = self.delete_post(msg)
-                if path:
-                    self._pelican.run()
-                    await msg.delete(delay=MESSAGE_DELETE_DELAY)
-                    await message.reply(f"Deleted post <{self._base_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
-                    await message.delete(delay=MESSAGE_DELETE_DELAY)
-                else:
-                    await message.reply(f"ERROR: Failed to delete post", delete_after=MESSAGE_DELETE_DELAY)
-                    await message.delete(delay=MESSAGE_DELETE_DELAY)
-            else:
-                await message.reply("ERROR: unknown action '{}'".format(content), delete_after=MESSAGE_DELETE_DELAY)
-                await message.delete(delay=MESSAGE_DELETE_DELAY)
-            return
-
-
-        if not message.attachments:
-            await message.reply("ERROR: No pictures attached", delete_after=MESSAGE_DELETE_DELAY)
+        # Process commands
+        if await self.dispatch_command(message):
             await message.delete(delay=MESSAGE_DELETE_DELAY)
             return
 
+        # Not a command - treat it as an upload
         title, path = await self.make_post(message)
-
-        self._pelican.run()
-
-        await self._channel.send(content=f"{message.author.mention} created a post titled \"{title}\": <{self._base_url}/{path}>")
+        if path:
+            self._pelican.run()
+            await self._channel.send(content=f"{message.author.mention} created a post titled \"{title}\": <{self._base_url}/{path}>")
+        else:
+            await message.reply(f"ERROR: failed to make post", delete_after=MESSAGE_DELETE_DELAY)
         await message.delete()
 
-    async def make_post(self, message):
-        date = datetime.now()
+    def get_datetime(self, message):
+        return pytz.timezone(self._settings["TIMEZONE"]).fromutc(message.created_at)
+
+    @staticmethod
+    def get_path(date):
+        return date.strftime("%Y/%m/%d/%H-%M-%S").replace("/", os.sep)
+
+    @staticmethod
+    def parse_text(message):
         content = message.clean_content.strip()
 
         title, *content = content.split("\n\n", 1)
@@ -167,9 +191,9 @@ class MyClient(discord.Client):
             content = ""
             title = "Untitled post"
 
-        path = date.strftime("%Y/%m/%d/%H-%M-%S").replace("/", os.sep)
-        os.makedirs(os.path.join(self._data_dir, path), exist_ok=True)
+        return title, content
 
+    async def save_images(self, message, path):
         images = []
         for a in message.attachments:
             filename = os.path.basename(urlparse(a.url).path).translate(CLEAN_FILENAME)
@@ -193,6 +217,19 @@ class MyClient(discord.Client):
                     thumb_filename = filename
 
             images.append({"filename": filename, "thumb_filename": thumb_filename})
+        return images
+
+    async def make_post(self, message):
+        date = self.get_datetime(message)
+        title, content = self.parse_text(message)
+        path = self.get_path(date)
+
+        os.makedirs(os.path.join(self._data_dir, path), exist_ok=True)
+
+        images = await self.save_images(message, path)
+        if not images:
+            await message.reply("ERROR: No valid attachments", delete_after=MESSAGE_DELETE_DELAY)
+            return None, None, None
 
         output = POST_TEMPLATE.format(
             title=title,
@@ -206,8 +243,7 @@ class MyClient(discord.Client):
 
         return title, path
 
-
-    def delete_post(self, message):
+    def get_post_data(self, message):
         m = URL_RE.match(message.clean_content)
         if not m:
             return None
@@ -217,23 +253,31 @@ class MyClient(discord.Client):
 
         path = urlparse(url).path[1:]
 
-        post = os.path.join(self._data_dir, path)
-        article = os.path.join(self._output_dir, path)
+        out_dir = os.path.join(self._output_dir, path)
+        in_dir = os.path.join(self._data_dir, path)
 
-        ret = path
-        if os.path.exists(post):
-            try:
-                shutil.rmtree(post)
-            except Exception:
-                ret = None
+        return {
+            "output_dir": out_dir,
+            "input_dir": in_dir,
+            "url_path": path,
+        }
 
-        if os.path.exists(article):
-            try:
-                shutil.rmtree(article)
-            except Exception:
-                ret = None
+    async def cmd_reply_delete(self, message, parent):
+        post = self.get_post_data(parent)
+        path = post["url_path"]
+        for k in ("input_dir", "output_dir"):
+            if os.path.exists(post[k]):
+                try:
+                    shutil.rmtree(post[k])
+                except Exception:
+                    path = None
 
-        return ret
+        if path:
+            self._pelican.run()
+            await parent.delete(delay=MESSAGE_DELETE_DELAY)
+            await message.reply(f"Deleted post <{self._base_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+        else:
+            await message.reply(f"ERROR: Failed to delete post", delete_after=MESSAGE_DELETE_DELAY)
 
 
 def main():

@@ -1,7 +1,7 @@
 discord-to-blog
 ===============
 
-A Discord bot that generates a photo blog from images posted to a Discord channel.
+A Discord bot that generates a static blog from posts in a channel.
 
 The images and posts in the Discord channel will be deleted as they are posted to the blog.
 
