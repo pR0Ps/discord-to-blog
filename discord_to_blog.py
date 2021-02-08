@@ -13,6 +13,26 @@ import pelican.settings
 import pytz
 import yaml
 
+HELP_TEXT = """\
+I will publish content you post here to <{site_url}>.
+
+Usage:
+ - Just write a message and attach some media to post it.
+ - If you start your message with `draft:`, you will have a chance to look at the post before publishing it.
+ - If your message had a blank line in it, anything before the blank line will be the title, anything after will be added to the post contents.
+
+When I create posts, I will post a message in this chat with a link to them. You can perform actions on the post by replying to the message with the following commands:
+ - `publish`: If the post is a draft, it will be published
+ - `unpublish`: If the post is published, it will be converted to a draft and hidden from the site
+ - `delete`: Deletes the post
+
+I also respond to the following commands:
+ - `help`: shows this message
+
+
+This message will self-destruct in 2 minutes.
+"""
+
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
 
 URL_RE = re.compile(".*<([^>]+)>")
@@ -351,6 +371,9 @@ class MyClient(discord.Client):
         self._pelican.run()
         await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
+
+    async def cmd_help(self, message):
+        await message.reply(HELP_TEXT.format(site_url=self._base_url), delete_after=120)
 
 
 def main():
