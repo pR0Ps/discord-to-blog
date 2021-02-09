@@ -349,6 +349,27 @@ footer p { margin: 0; }
 
 .clear { clear: both; }
 
+/* Show a play button on video-thumb elements*/
+.video-thumb {
+    position: relative;
+    display: inline-block;
+}
+.video-thumb:after {
+    pointer-events: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    content: "\25BA"; /* ▶ */
+    font-size: 100px;
+    color: #fff;
+    opacity: 0.8;
+    text-shadow: 0px 0px 30px rgb(0, 0, 0);
+}
+.video-thumb:hover:after {
+    opacity: 1;
+}
+
 @media screen and (max-width: 1024px) {
     #wrapper {
         margin-left: 2.6em;

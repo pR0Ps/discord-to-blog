@@ -38,6 +38,8 @@ This message will self-destruct in 2 minutes.
 
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
 
+VIDEO_EXTENSIONS = {"mkv", "mpg", "mpeg", "mpv", "mp4", "m4v", "mov", "webm", "gif"}
+IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "svg", "heic", "heif", "bmp", "tiff", "webp"}
 URL_RE = re.compile(".*<([^>]+)>")
 DRAFT_PREFIX = "draft:"
 
@@ -48,10 +50,13 @@ Date: {date}
 
 {content}
 
-{images}"""
+{media}"""
 
 IMAGE_TEMPLATE = "[![{filename}]({{attach}}{thumb_filename})]({{static}}{filename})"
-IMAGE_MAX_DIMENSION = 800
+VIDEO_TEMPLATE =  f"<div class='video-thumb' markdown='1'>{IMAGE_TEMPLATE}</div>"
+OTHER_TEMPLATE = "[{filename}]({{static}}{filename})"
+
+MEDIA_MAX_DIMENSION = 800
 
 PELICAN_SETTINGS = {
     "USE_FOLDER_AS_CATEGORY": False,
@@ -177,8 +182,6 @@ class MyClient(discord.Client):
 
         try:
             await fcn(**kwargs)
-        except TypeError:
-            await message.reply(f"ERROR: wrong arguments for command '{command}'", delete_after=MESSAGE_DELETE_DELAY)
         except Exception as e:
             await message.reply(f"ERROR: failed to run command ({e.__class__.__name__}: {e})", delete_after=MESSAGE_DELETE_DELAY)
         return True
@@ -248,31 +251,60 @@ class MyClient(discord.Client):
 
         return title, content, is_draft
 
-    async def save_images(self, message, path):
-        images = []
+    async def save_attachment_thumb(self, attachment, filename, path):
+        # Attempt to get a thumbnail
+        #  - Only attempt for attachments with width+height (images and videos)
+        #  - Abuses the fact that the proxy_url takes format, width, and height params
+        #  - Only keeps it if the thumbnail is actually smaller
+        w, h = attachment.width, attachment.height
+        if w is None or h is None:
+            return None
+
+        # Don't allow thumbnails to go bigger than the originals
+        scale = max(1, max(w, h) / MEDIA_MAX_DIMENSION)
+
+        thumb_filename = "{}.{}px.jpg".format(os.path.splitext(filename)[0], MEDIA_MAX_DIMENSION)
+        thumb_path = os.path.join(self.data_dir, path, thumb_filename)
+        with open(thumb_path, 'wb') as f:
+            attachment.proxy_url = "{}?format=jpeg&width={:g}&height={:g}".format(attachment.proxy_url, w // scale, h // scale)
+            await attachment.save(f, use_cached=True)
+
+        # If the thumbnail is bigger, just use the original file as the thumb
+        # NOTE: If a thumbnail for a video is ever bigger than the entire video this will cause
+        #       the original video to be linked in the <img> tag (and not display).
+        if os.path.getsize(thumb_path) >= attachment.size:
+            os.remove(thumb_path)
+            return filename
+
+        return thumb_filename
+
+    async def save_attachments(self, message, path):
+        saved = []
         for a in message.attachments:
             filename = os.path.basename(urlparse(a.url).path).translate(CLEAN_FILENAME)
             with open(os.path.join(self.data_dir, path, filename), 'wb') as f:
                 await a.save(f)
 
-            # Attempt to get a thumbnail
-            #  - Only attempted if the image is too big
-            #  - Abuses the fact that the proxy_url takes width and height params
-            #  - Only keeps it if the thumbnail is smaller (ex: gif thumbs can be bigger)
-            thumb_filename = filename
-            scale = max(a.width, a.height) / IMAGE_MAX_DIMENSION
-            if scale > 1:
-                thumb_filename = "thumb_{}".format(filename)
-                thumb_path = os.path.join(self.data_dir, path, thumb_filename)
-                with open(thumb_path, 'wb') as f:
-                    a.proxy_url = "{}?width={:g}&height={:g}".format(a.proxy_url, a.width // scale, a.height // scale)
-                    await a.save(f, use_cached=True)
-                if os.path.getsize(thumb_path) >= a.size:
-                    os.remove(thumb_path)
-                    thumb_filename = filename
+            thumb_filename = await self.save_attachment_thumb(a, filename, path)
 
-            images.append({"filename": filename, "thumb_filename": thumb_filename})
-        return images
+            saved.append({
+                "filename": filename,
+                "thumb_filename": thumb_filename,
+            })
+
+        return saved
+
+    @staticmethod
+    def embed_media(media):
+        template = OTHER_TEMPLATE
+        # Only video and images have thumbnails
+        if media["thumb_filename"] is not None:
+            ext = media["filename"].rsplit(".", 1)[-1].lower()
+            if ext in VIDEO_EXTENSIONS:
+                template = VIDEO_TEMPLATE
+            elif ext in IMAGE_EXTENSIONS:
+                template = IMAGE_TEMPLATE
+        return template.format(**media)
 
     async def make_post(self, message):
         date = self.get_datetime(message)
@@ -281,16 +313,16 @@ class MyClient(discord.Client):
 
         os.makedirs(os.path.join(self.data_dir, path), exist_ok=True)
 
-        images = await self.save_images(message, path)
-        if not images:
-            await message.reply("ERROR: No valid attachments", delete_after=MESSAGE_DELETE_DELAY)
+        media = await self.save_attachments(message, path)
+        if not media:
+            await message.reply("ERROR: No attached media", delete_after=MESSAGE_DELETE_DELAY)
             return None, None, None
 
         output = POST_TEMPLATE.format(
             title=title,
             date=date.strftime("%Y-%m-%d %H:%M:%S"),
             author=message.author.display_name,
-            images=" ".join(IMAGE_TEMPLATE.format(**x) for x in images),
+            media=" ".join(self.embed_media(x) for x in media),
             content=content,
         )
         with open(os.path.join(self.data_dir, path, "index.md"), 'wt') as f:
@@ -323,17 +355,17 @@ class MyClient(discord.Client):
     async def cmd_reply_add(self, message, parent):
         post = self.get_post_data(parent)
         path = post["url_path"]
-        images = await self.save_images(message, path)
-        if not images:
-            await message.reply("ERROR: No valid attachments to add", delete_after=MESSAGE_DELETE_DELAY)
+        media = await self.save_attachments(message, path)
+        if not media:
+            await message.reply("ERROR: No attached media to add", delete_after=MESSAGE_DELETE_DELAY)
             return
 
         with open(os.path.join(self.data_dir, path, "index.md"), 'at') as f:
             f.write(" ")
-            f.write(" ".join(IMAGE_TEMPLATE.format(**x) for x in images))
+            f.write(" ".join(self.embed_media(x) for x in media))
 
         self._pelican.run()
-        await message.reply(f"Added images to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+        await message.reply(f"Added media to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_reply_delete(self, message, parent):
         post = self.get_post_data(parent)
