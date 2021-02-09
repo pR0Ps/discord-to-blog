@@ -22,5 +22,6 @@ setup(
         "pytz",
     ],
     packages=["discord_to_blog"],
+    package_data={"discord_to_blog": ["theme/*", "theme/*/*", "theme/*/*/*"]}, # ugh
     entry_points={"console_scripts": ["discord-to-blog=discord_to_blog.__main__:main"]},
 )

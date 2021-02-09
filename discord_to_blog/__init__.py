@@ -8,6 +8,7 @@ import subprocess
 from urllib.parse import urlparse
 
 import discord
+import pkg_resources
 import pelican
 import pelican.settings
 import pelican.utils
@@ -83,7 +84,8 @@ PELICAN_SETTINGS.update({
     "ARCHIVES_SAVE_AS": "{}/index.html".format(PELICAN_SETTINGS["ARCHIVES_URL"]),
 })
 PELICAN_SETTINGS.update({
-    # Blue Penguin theme settings
+    # Theme settings
+    "THEME": pkg_resources.resource_filename(__name__, "theme"),
     "DISPLAY_FOOTER": False,
     "MENU_INTERNAL_PAGES": (('Archives', PELICAN_SETTINGS["ARCHIVES_URL"], PELICAN_SETTINGS["ARCHIVES_SAVE_AS"]),),
     "MENUITEMS": (("Feed", "/{}".format(PELICAN_SETTINGS["FEED_ALL_ATOM"])),),
@@ -93,14 +95,13 @@ MESSAGE_DELETE_DELAY=5
 
 class MyClient(discord.Client):
 
-    def __init__(self, *args, guild_name, channel, theme_dir, data_dir, output_dir, base_url, site_name, timezone, **kwargs):
+    def __init__(self, *args, guild_name, channel, data_dir, output_dir, base_url, site_name, timezone, **kwargs):
         self._guild_name = guild_name
         self._channel_name = channel
 
         self._settings = {
             "PATH": data_dir,
             "OUTPUT_PATH": output_dir,
-            "THEME": theme_dir,
             "SITEURL": base_url,
             "FEED_DOMAIN": base_url,
             "SITENAME": site_name,

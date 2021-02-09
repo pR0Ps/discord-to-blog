@@ -11,7 +11,7 @@ I wrote this so that myself and others would be able to easily publish images to
 already use Discord, I wanted to experiment with using it as the input mechanism.
 
 Since this is an experiment, it's in a "mostly works" state. There are probably a bunch of unhandled
-edge cases and it is currently optimized for a single theme ([Blue Penguin][]).
+edge cases and it bundles its own hardcoded theme ([Blue Penguin][]).
 
 Instructions
 ------------
@@ -20,14 +20,12 @@ Instructions
     - Manage Messages (to delete messages)
     - Send Messages
 2. Install `discord-to-blog` using `pip` (`pip install git+https://github.com/pR0Ps/discord-to-blog`)
-3. Download the [Blue Penguin][] Pelican theme.
-4. Create a `settings.yml` file based off the example below:
+3. Create a `settings.yml` file based off the example below:
 ```
 guild_name: ...
 token: ...
 channel: blog-posts
 data_dir: ./content
-theme_dir: ./blue-penguin
 output_dir: ./output
 base_url: http://localhost:8000
 site_name: My photo blog
