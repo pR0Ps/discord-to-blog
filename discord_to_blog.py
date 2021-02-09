@@ -95,10 +95,6 @@ class MyClient(discord.Client):
         self._guild_name = guild_name
         self._channel_name = channel
 
-        self._data_dir=data_dir
-        self._output_dir=output_dir
-        self._base_url=base_url
-
         self._settings = {
             "PATH": data_dir,
             "OUTPUT_PATH": output_dir,
@@ -112,6 +108,18 @@ class MyClient(discord.Client):
         self._channel = None
         self._pelican = None
         super().__init__(*args, **kwargs)
+
+    @property
+    def output_dir(self):
+        return self._settings["OUTPUT_PATH"]
+
+    @property
+    def data_dir(self):
+        return self._settings["PATH"]
+
+    @property
+    def site_url(self):
+        return self._settings["SITEURL"]
 
     async def on_ready(self):
         g = discord.utils.get(self.guilds, name=self._guild_name)
@@ -192,9 +200,9 @@ class MyClient(discord.Client):
         if path:
             self._pelican.run()
             if is_draft:
-                await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self._base_url}/{path}>")
+                await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
             else:
-                await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self._base_url}/{path}>")
+                await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
         else:
             await message.reply(f"ERROR: failed to make post", delete_after=MESSAGE_DELETE_DELAY)
         await message.delete()
@@ -243,7 +251,7 @@ class MyClient(discord.Client):
         images = []
         for a in message.attachments:
             filename = os.path.basename(urlparse(a.url).path).translate(CLEAN_FILENAME)
-            with open(os.path.join(self._data_dir, path, filename), 'wb') as f:
+            with open(os.path.join(self.data_dir, path, filename), 'wb') as f:
                 await a.save(f)
 
             # Attempt to get a thumbnail
@@ -254,7 +262,7 @@ class MyClient(discord.Client):
             scale = max(a.width, a.height) / IMAGE_MAX_DIMENSION
             if scale > 1:
                 thumb_filename = "thumb_{}".format(filename)
-                thumb_path = os.path.join(self._data_dir, path, thumb_filename)
+                thumb_path = os.path.join(self.data_dir, path, thumb_filename)
                 with open(thumb_path, 'wb') as f:
                     a.proxy_url = "{}?width={:g}&height={:g}".format(a.proxy_url, a.width // scale, a.height // scale)
                     await a.save(f, use_cached=True)
@@ -270,7 +278,7 @@ class MyClient(discord.Client):
         title, content, is_draft = self.parse_text(message)
         path = self.get_path(date, is_draft)
 
-        os.makedirs(os.path.join(self._data_dir, path), exist_ok=True)
+        os.makedirs(os.path.join(self.data_dir, path), exist_ok=True)
 
         images = await self.save_images(message, path)
         if not images:
@@ -284,7 +292,7 @@ class MyClient(discord.Client):
             images=" ".join(IMAGE_TEMPLATE.format(**x) for x in images),
             content=content,
         )
-        with open(os.path.join(self._data_dir, path, "index.md"), 'wt') as f:
+        with open(os.path.join(self.data_dir, path, "index.md"), 'wt') as f:
             f.write(output)
 
         return title, path, is_draft
@@ -300,8 +308,8 @@ class MyClient(discord.Client):
         path = urlparse(url).path[1:]
         date, is_draft = self.from_path(path)
 
-        out_dir = os.path.join(self._output_dir, path)
-        in_dir = os.path.join(self._data_dir, path)
+        out_dir = os.path.join(self.output_dir, path)
+        in_dir = os.path.join(self.data_dir, path)
 
         return {
             "output_dir": out_dir,
@@ -324,7 +332,7 @@ class MyClient(discord.Client):
         if path:
             self._pelican.run()
             await parent.delete(delay=MESSAGE_DELETE_DELAY)
-            await message.reply(f"Deleted post <{self._base_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+            await message.reply(f"Deleted post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
         else:
             await message.reply(f"ERROR: Failed to delete post", delete_after=MESSAGE_DELETE_DELAY)
 
@@ -341,7 +349,7 @@ class MyClient(discord.Client):
 
         path = self.get_path(post["date"], is_draft=False)
         try:
-            shutil.move(post["input_dir"], os.path.join(self._data_dir, path))
+            shutil.move(post["input_dir"], os.path.join(self.data_dir, path))
         except Exception:
             await message.reply(f"ERROR: Failed to publish post", delete_after=MESSAGE_DELETE_DELAY)
             return
@@ -363,7 +371,7 @@ class MyClient(discord.Client):
 
         path = self.get_path(post["date"], is_draft=True)
         try:
-            shutil.move(post["input_dir"], os.path.join(self._data_dir, path))
+            shutil.move(post["input_dir"], os.path.join(self.data_dir, path))
         except Exception:
             await message.reply(f"ERROR: Failed to unpublish post", delete_after=MESSAGE_DELETE_DELAY)
             return
@@ -373,7 +381,7 @@ class MyClient(discord.Client):
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_help(self, message):
-        await message.reply(HELP_TEXT.format(site_url=self._base_url), delete_after=120)
+        await message.reply(HELP_TEXT.format(site_url=self.site_url), delete_after=120)
 
 
 def main():
