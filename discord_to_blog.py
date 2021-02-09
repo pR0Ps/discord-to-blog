@@ -10,6 +10,7 @@ import discord
 from discord.errors import Forbidden
 import pelican
 import pelican.settings
+import pelican.utils
 import pytz
 import yaml
 
@@ -28,6 +29,7 @@ When I create posts, I will post a message in this chat with a link to them. You
 
 I also respond to the following commands:
  - `help`: shows this message
+ - `regenerate`: forces the website to refresh its contents
 
 
 This message will self-destruct in 2 minutes.
@@ -379,6 +381,11 @@ class MyClient(discord.Client):
         self._pelican.run()
         await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
+
+    async def cmd_regenerate(self, message):
+        pelican.utils.clean_output_dir(self._pelican.output_path, self._pelican.output_retention)
+        self._pelican.run()
+        await message.reply("Regenerated content", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_help(self, message):
         await message.reply(HELP_TEXT.format(site_url=self.site_url), delete_after=120)
