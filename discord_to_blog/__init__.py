@@ -210,7 +210,7 @@ class MyClient(discord.Client):
             else:
                 await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
         else:
-            await message.reply(f"ERROR: failed to make post", delete_after=MESSAGE_DELETE_DELAY)
+            await message.reply("ERROR: Failed to post - no content or attached media", delete_after=MESSAGE_DELETE_DELAY)
         await message.delete()
 
     def get_datetime(self, message):
@@ -316,8 +316,7 @@ class MyClient(discord.Client):
         os.makedirs(os.path.join(self.data_dir, path), exist_ok=True)
 
         media = await self.save_attachments(message, path)
-        if not media:
-            await message.reply("ERROR: No attached media", delete_after=MESSAGE_DELETE_DELAY)
+        if not media and not content:
             return None, None, None
 
         output = POST_TEMPLATE.format(
