@@ -1,4 +1,5 @@
-import argparse
+#!/usr/bin/env python
+
 import os.path
 from datetime import datetime
 import re
@@ -7,12 +8,10 @@ import subprocess
 from urllib.parse import urlparse
 
 import discord
-from discord.errors import Forbidden
 import pelican
 import pelican.settings
 import pelican.utils
 import pytz
-import yaml
 
 HELP_TEXT = """\
 I will publish content you post here to <{site_url}>.
@@ -405,26 +404,3 @@ class MyClient(discord.Client):
 
     async def cmd_help(self, message):
         await message.reply(HELP_TEXT.format(site_url=self.site_url), delete_after=120)
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a blog from a Discord channel"
-    )
-    parser.add_argument(
-        "-c", "--config",
-        help="The config file to use",
-        type=argparse.FileType(mode='rt'),
-        required=True
-    )
-
-    args = parser.parse_args()
-
-    conf = yaml.safe_load(args.config.read())
-
-    token = conf.pop("token")
-    client = MyClient(**conf)
-    client.run(token)
-
-if __name__ == "__main__":
-    main()

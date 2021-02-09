@@ -21,6 +21,6 @@ setup(
         "pyyaml>=5.4.1,<6.0.0",
         "pytz",
     ],
-    py_modules=["discord_to_blog"],
-    entry_points={"console_scripts": ["discord-to-blog=discord_to_blog:main"]},
+    packages=["discord_to_blog"],
+    entry_points={"console_scripts": ["discord-to-blog=discord_to_blog.__main__:main"]},
 )
