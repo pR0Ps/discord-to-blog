@@ -26,6 +26,7 @@ When I create posts, I will post a message in this chat with a link to them. You
  - `publish`: If the post is a draft, it will be published
  - `unpublish`: If the post is published, it will be converted to a draft and hidden from the site
  - `delete`: Deletes the post
+ - `add`: Adds all media attached to the message to the post
 
 I also respond to the following commands:
  - `help`: shows this message
@@ -47,8 +48,8 @@ Date: {date}
 
 {content}
 
-{images}
-"""
+{images}"""
+
 IMAGE_TEMPLATE = "[![{filename}]({{attach}}{thumb_filename})]({{static}}{filename})"
 IMAGE_MAX_DIMENSION = 800
 
@@ -320,6 +321,21 @@ class MyClient(discord.Client):
             "is_draft": is_draft,
             "date": date,
         }
+
+    async def cmd_reply_add(self, message, parent):
+        post = self.get_post_data(parent)
+        path = post["url_path"]
+        images = await self.save_images(message, path)
+        if not images:
+            await message.reply("ERROR: No valid attachments to add", delete_after=MESSAGE_DELETE_DELAY)
+            return
+
+        with open(os.path.join(self.data_dir, path, "index.md"), 'at') as f:
+            f.write(" ")
+            f.write(" ".join(IMAGE_TEMPLATE.format(**x) for x in images))
+
+        self._pelican.run()
+        await message.reply(f"Added images to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_reply_delete(self, message, parent):
         post = self.get_post_data(parent)
