@@ -37,4 +37,11 @@ timezone: America/Toronto
 7. [optional] Configure your system to run `discord-to-blog` as a service using something like
    `systemd` to ensure that it runs at startup, restarts if it crashes, etc.
 
+
+Licence
+-------
+Licensed under the [GNU GPLv3][]
+
+
+  [GNU GPLv3]: https://www.gnu.org/licenses/gpl-3.0.en.html
   [Blue Penguin]: https://github.com/jody-frankowski/blue-penguin/
