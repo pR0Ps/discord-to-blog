@@ -86,9 +86,7 @@ PELICAN_SETTINGS.update({
 PELICAN_SETTINGS.update({
     # Theme settings
     "THEME": pkg_resources.resource_filename(__name__, "theme"),
-    "DISPLAY_FOOTER": False,
     "MENU_INTERNAL_PAGES": (('Archives', PELICAN_SETTINGS["ARCHIVES_URL"], PELICAN_SETTINGS["ARCHIVES_SAVE_AS"]),),
-    "MENUITEMS": (("Feed", "/{}".format(PELICAN_SETTINGS["FEED_ALL_ATOM"])),),
 })
 
 MESSAGE_DELETE_DELAY=5
