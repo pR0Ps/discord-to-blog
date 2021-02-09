@@ -75,6 +75,8 @@ PELICAN_SETTINGS = {
 
     "EXTRA_PATH_METADATA": {"drafts": {"status": "draft"}},
 
+    "ARTICLE_TRANSLATION_ID": False,
+
     # Feeds
     "FEED_ALL_ATOM": "feed.atom",
     "FEED_MAX_ITEMS": 50,
