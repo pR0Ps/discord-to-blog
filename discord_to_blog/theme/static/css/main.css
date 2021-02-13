@@ -37,9 +37,6 @@ article, aside, details, figcaption, figure,
 footer, header, hgroup, menu, nav, section {
     display: block;
 }
-body {
-    line-height: 1;
-}
 ol, ul {
     list-style: none;
 }
@@ -60,6 +57,7 @@ body {
     font-family: Georgia, serif;
     font-size: 16px;
     line-height: 1.5em;
+    min-width: 375px;
 }
 
 header, #wrapper {
@@ -290,7 +288,7 @@ header h2 {
 }
 .pages a.next_page {
     float: right;
-    width: 140px;
+    width: 110px;
     text-align: center;
     border-top-right-radius: 5px;
     border-bottom-right-radius: 5px;
@@ -298,7 +296,7 @@ header h2 {
 }
 .pages a.prev_page {
     float: left;
-    width: 140px;
+    width: 110px;
     text-align: center;
     border-top-left-radius: 5px;
     border-bottom-left-radius: 5px;
@@ -313,7 +311,7 @@ header h2 {
 }
 .pages span {
     display: block;
-    margin: 0 160px;
+    margin: 0 120px;
     text-align: center;
 }
 
