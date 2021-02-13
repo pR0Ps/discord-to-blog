@@ -154,6 +154,7 @@ thead {
 .post.archives {
     margin-bottom: 1.5em;
     margin-left: 160px;
+    clear: both;
 }
 .post p {
     text-align: justify;
