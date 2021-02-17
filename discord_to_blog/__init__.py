@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
+import asyncio
+from collections import deque
 import os.path
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import shutil
 import subprocess
@@ -58,6 +60,11 @@ OTHER_TEMPLATE = "[{filename}]({{static}}{filename})"
 
 MEDIA_MAX_DIMENSION = 800
 
+IMPLICIT_ADD_TIMEOUT = 5
+DEBOUNCE_DELAY = 2
+
+MESSAGE_DELETE_DELAY=5
+
 PELICAN_SETTINGS = {
     "USE_FOLDER_AS_CATEGORY": False,
     "DEFAULT_PAGINATION": 5,
@@ -96,7 +103,11 @@ PELICAN_SETTINGS.update({
     "MENU_INTERNAL_PAGES": (('Archives', PELICAN_SETTINGS["ARCHIVES_URL"], PELICAN_SETTINGS["ARCHIVES_SAVE_AS"]),),
 })
 
-MESSAGE_DELETE_DELAY=5
+def call_later(seconds, callback):
+    async def f():
+        await asyncio.sleep(seconds)
+        await callback()
+    return asyncio.ensure_future(f())
 
 class MyClient(discord.Client):
 
@@ -115,6 +126,10 @@ class MyClient(discord.Client):
 
         self._channel = None
         self._pelican = None
+
+        self._queue = deque()
+        self._process_task = None
+        self._prev_posts = {}
         super().__init__(*args, **kwargs)
 
     @property
@@ -188,6 +203,45 @@ class MyClient(discord.Client):
             await message.reply(f"ERROR: failed to run command ({e.__class__.__name__}: {e})", delete_after=MESSAGE_DELETE_DELAY)
         return True
 
+    async def process_message(self, message):
+        # Process commands
+        if await self.dispatch_command(message):
+            await message.delete(delay=MESSAGE_DELETE_DELAY)
+            return
+
+        # Special case - treat immidiate non-command as an "add"
+        parent = await self.find_implicit_parent(message)
+        if parent:
+            await self.cmd_reply_add(message, parent)
+            await message.delete()
+            return
+
+        # Not a command - treat it as an upload
+        title, path, is_draft = await self.make_post(message)
+        if path:
+            self._pelican.run()
+            if is_draft:
+                msg = await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
+            else:
+                msg = await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
+
+            # Store message in case we need to implicitly add to it later
+            self._prev_posts[message.author.id] = msg
+        else:
+            await message.reply("ERROR: Failed to post - no content or attached media", delete_after=MESSAGE_DELETE_DELAY)
+        await message.delete()
+
+    async def process_queue(self):
+        lst = []
+        while self._queue:
+            lst.append(self._queue.popleft())
+
+        # Sort messages by author, content above non-content, fall back to created time
+        lst.sort(key=lambda x: (x.author.id, not x.clean_content.strip(), x.created_at))
+
+        for x in lst:
+            await self.process_message(x)
+
     async def on_message(self, message):
         # Ignore self
         if message.author == self.user:
@@ -196,22 +250,27 @@ class MyClient(discord.Client):
         elif message.channel != self._channel:
             return
 
-        # Process commands
-        if await self.dispatch_command(message):
-            await message.delete(delay=MESSAGE_DELETE_DELAY)
-            return
+        # Add the message to the queue to process and wait for any followups
+        # This allows for processing messages synchronously
+        if self._process_task:
+            self._process_task.cancel()
+        self._queue.append(message)
+        self._process_task = call_later(DEBOUNCE_DELAY, self.process_queue)
 
-        # Not a command - treat it as an upload
-        title, path, is_draft = await self.make_post(message)
-        if path:
-            self._pelican.run()
-            if is_draft:
-                await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
-            else:
-                await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
-        else:
-            await message.reply("ERROR: Failed to post - no content or attached media", delete_after=MESSAGE_DELETE_DELAY)
-        await message.delete()
+    async def find_implicit_parent(self, message):
+        # Only implicitly add if the message has no text in it
+        if message.clean_content.strip():
+            return None
+
+        msg = self._prev_posts.get(message.author.id)
+        if not msg:
+            return None
+
+        # If the message is too old then don't add to it
+        if message.created_at - (msg.edited_at or msg.created_at) > timedelta(seconds=IMPLICIT_ADD_TIMEOUT):
+            return None
+
+        return msg
 
     def get_datetime(self, message):
         return pytz.timezone(self._settings["TIMEZONE"]).fromutc(message.created_at)
