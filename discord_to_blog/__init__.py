@@ -61,7 +61,8 @@ OTHER_TEMPLATE = "[{filename}]({{static}}{filename})"
 MEDIA_MAX_DIMENSION = 800
 
 IMPLICIT_ADD_TIMEOUT = 5
-DEBOUNCE_DELAY = 2
+MESSAGE_DEBOUNCE_DELAY = 2
+REGENERATE_DEBOUNCE_DELAY = 2
 
 MESSAGE_DELETE_DELAY=5
 
@@ -106,7 +107,10 @@ PELICAN_SETTINGS.update({
 def call_later(seconds, callback):
     async def f():
         await asyncio.sleep(seconds)
-        await callback()
+        if asyncio.iscoroutinefunction(callback):
+            await callback()
+        else:
+            callback()
     return asyncio.ensure_future(f())
 
 class MyClient(discord.Client):
@@ -129,6 +133,7 @@ class MyClient(discord.Client):
 
         self._queue = deque()
         self._process_task = None
+        self._regenerate_task = None
         self._prev_posts = {}
         super().__init__(*args, **kwargs)
 
@@ -170,6 +175,18 @@ class MyClient(discord.Client):
         self._pelican = pelican.Pelican(pelican.settings.read_settings(override=PELICAN_SETTINGS))
 
         print("Set up the Pelican site generator")
+
+    def regenerate(self, defer=True, clean=False):
+        if self._regenerate_task:
+            self._regenerate_task.cancel()
+
+        if clean:
+            pelican.utils.clean_output_dir(self._pelican.output_path, self._pelican.output_retention)
+
+        if defer:
+            self._regenerate_task = call_later(REGENERATE_DEBOUNCE_DELAY, self._pelican.run)
+        else:
+            self._pelican.run()
 
     async def dispatch_command(self, message):
         command = message.clean_content.strip().lower()
@@ -219,7 +236,7 @@ class MyClient(discord.Client):
         # Not a command - treat it as an upload
         title, path, is_draft = await self.make_post(message)
         if path:
-            self._pelican.run()
+            self.regenerate()
             if is_draft:
                 msg = await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
             else:
@@ -255,7 +272,7 @@ class MyClient(discord.Client):
         if self._process_task:
             self._process_task.cancel()
         self._queue.append(message)
-        self._process_task = call_later(DEBOUNCE_DELAY, self.process_queue)
+        self._process_task = call_later(MESSAGE_DEBOUNCE_DELAY, self.process_queue)
 
     async def find_implicit_parent(self, message):
         # Only implicitly add if the message has no text in it
@@ -424,7 +441,7 @@ class MyClient(discord.Client):
             f.write(" ")
             f.write(" ".join(self.embed_media(x) for x in media))
 
-        self._pelican.run()
+        self.regenerate()
         await message.reply(f"Added media to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_reply_delete(self, message, parent):
@@ -438,7 +455,7 @@ class MyClient(discord.Client):
                     path = None
 
         if path:
-            self._pelican.run()
+            self.regenerate()
             await parent.delete(delay=MESSAGE_DELETE_DELAY)
             await message.reply(f"Deleted post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
         else:
@@ -462,7 +479,7 @@ class MyClient(discord.Client):
             await message.reply(f"ERROR: Failed to publish post", delete_after=MESSAGE_DELETE_DELAY)
             return
 
-        self._pelican.run()
+        self.regenerate()
         await parent.edit(content=parent.content.replace("drafted a post", "published a post").replace(post["url_path"], path))
         await message.reply(f"Published post", delete_after=MESSAGE_DELETE_DELAY)
 
@@ -484,13 +501,12 @@ class MyClient(discord.Client):
             await message.reply(f"ERROR: Failed to unpublish post", delete_after=MESSAGE_DELETE_DELAY)
             return
 
-        self._pelican.run()
+        self.regenerate()
         await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_regenerate(self, message):
-        pelican.utils.clean_output_dir(self._pelican.output_path, self._pelican.output_retention)
-        self._pelican.run()
+        self.regenerate(defer=False, clean=True)
         await message.reply("Regenerated content", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_help(self, message):
