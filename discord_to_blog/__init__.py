@@ -360,6 +360,12 @@ class MyClient(discord.Client):
         saved = []
         for a in message.attachments:
             filename = os.path.basename(urlparse(a.url).path).translate(CLEAN_FILENAME)
+
+            # Don't overwrite files if they already exist (find a new filename by repeatly appending '_')
+            while os.path.exists(os.path.join(self.data_dir, path, filename)):
+                r, e = os.path.splitext(filename)
+                filename = f"{r}_{e}"
+
             with open(os.path.join(self.data_dir, path, filename), 'wb') as f:
                 await a.save(f)
 
