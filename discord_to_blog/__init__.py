@@ -405,7 +405,7 @@ class MyClient(discord.Client):
             title=title,
             date=date.strftime("%Y-%m-%d %H:%M:%S"),
             author=message.author.display_name,
-            media=" ".join(self.embed_media(x) for x in media),
+            media="\n".join(self.embed_media(x) for x in media),
             content=content,
         )
         with open(os.path.join(self.data_dir, path, "index.md"), 'wt') as f:
@@ -444,8 +444,8 @@ class MyClient(discord.Client):
             return
 
         with open(os.path.join(self.data_dir, path, "index.md"), 'at') as f:
-            f.write(" ")
-            f.write(" ".join(self.embed_media(x) for x in media))
+            f.write("\n")
+            f.write("\n".join(self.embed_media(x) for x in media))
 
         self.regenerate()
         await message.reply(f"Added media to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
