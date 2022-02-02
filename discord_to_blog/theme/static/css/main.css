@@ -351,7 +351,6 @@ footer p { margin: 0; }
 /* Show a play button on video-thumb elements*/
 .video-thumb {
     position: relative;
-    display: inline-block;
 }
 .video-thumb:after {
     pointer-events: none;
