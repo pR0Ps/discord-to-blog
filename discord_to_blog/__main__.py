@@ -2,7 +2,7 @@
 
 import argparse
 
-from discord_to_blog import MyClient
+from discord_to_blog import run_blogbot
 
 import yaml
 
@@ -19,12 +19,9 @@ def main():
     )
 
     args = parser.parse_args()
-
     conf = yaml.safe_load(args.config.read())
 
-    token = conf.pop("token")
-    client = MyClient(**conf)
-    client.run(token)
+    run_blogbot(**conf)
 
 
 if __name__ == "__main__":
