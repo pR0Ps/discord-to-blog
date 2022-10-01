@@ -21,8 +21,12 @@ import pytz
 __log__ = logging.getLogger(__name__)
 
 
-HELP_TEXT = """\
-I will publish content you post here to <{site_url}>.
+DELETE_EMOJI = "❌"
+PUBLISH_EMOJI = "✅"
+UNPUBLISH_EMOJI = "✏️"
+
+HELP_END = "Once you no longer need this help, close it with the {} below.".format(DELETE_EMOJI)
+HELP_TEXT = "I will publish content you post here to <{site_url}>" + """
 
 Usage:
  - Just write a message and attach some media to post it.
@@ -30,18 +34,16 @@ Usage:
  - If your message had a blank line in it, anything before the blank line will be the title, anything after will be added to the post contents.
 
 When I create posts, I will post a message in this chat with a link to them. You can perform actions on the post by replying to the message with the following commands:
- - `publish`: If the post is a draft, it will be published
- - `unpublish`: If the post is published, it will be converted to a draft and hidden from the site
- - `delete`: Deletes the post
+ - `publish` ({}): If the post is a draft, it will be published
+ - `unpublish` ({}): If the post is published, it will be converted to a draft and hidden from the site
+ - `delete` ({}): Deletes the post
  - `add`: Adds all media attached to the message to the post
 
 I also respond to the following commands:
  - `help`: shows this message
  - `regenerate`: forces the website to refresh its contents
 
-
-This message will self-destruct in 2 minutes.
-"""
+""".format(PUBLISH_EMOJI, UNPUBLISH_EMOJI, DELETE_EMOJI) + HELP_END
 
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
 
@@ -145,7 +147,8 @@ class MyClient(discord.Client):
             intents=discord.Intents(
                 guilds=True,
                 guild_messages=True,
-                message_content=True
+                guild_reactions=True,
+                message_content=True,
             ),
             **kwargs
         )
@@ -254,6 +257,7 @@ class MyClient(discord.Client):
                 msg = await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
             else:
                 msg = await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
+            await self.apply_reactions(msg, is_draft=is_draft)
 
             # Store message in case we need to implicitly add to it later
             self._prev_posts[message.author.id] = msg
@@ -286,6 +290,50 @@ class MyClient(discord.Client):
             self._process_task.cancel()
         self._queue.append(message)
         self._process_task = call_later(MESSAGE_DEBOUNCE_DELAY, self.process_queue)
+
+    async def on_raw_reaction_add(self, reaction):
+        # Using raw_reaction_add so we can get posts from before we connected
+
+        # Must be a user reacting to the bot's messages in the proper channel
+        if reaction.member == self.user:
+            return
+        message = await self._channel.fetch_message(reaction.message_id)
+        if message.author != self.user or message.channel != self._channel:
+            return
+
+        # Special case for the help text
+        if message.clean_content.endswith(HELP_END):
+            if reaction.emoji == DELETE_EMOJI:
+                await message.delete()
+            return
+
+        fcn = {
+            DELETE_EMOJI: self.cmd_reply_delete,
+            UNPUBLISH_EMOJI: self.cmd_reply_unpublish,
+            PUBLISH_EMOJI: self.cmd_reply_publish,
+        }.get(str(reaction.emoji))
+        if not fcn:
+            return
+
+        message = await fcn(message, message)
+
+        if message is None:
+            # was deleted
+            return
+
+        post = self.get_post_data(message)
+        if not post:
+            await message.clear_reactions()
+        else:
+            await self.apply_reactions(message, is_draft=post["is_draft"])
+
+    async def apply_reactions(self, message, is_draft):
+        await message.clear_reactions()
+        await message.add_reaction(DELETE_EMOJI)
+        if is_draft:
+            await message.add_reaction(PUBLISH_EMOJI)
+        else:
+            await message.add_reaction(UNPUBLISH_EMOJI)
 
     async def find_implicit_parent(self, message):
         # Only implicitly add if the message has no text in it
@@ -454,7 +502,7 @@ class MyClient(discord.Client):
         media = await self.save_attachments(message, path)
         if not media:
             await message.reply("ERROR: No attached media to add", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         with open(os.path.join(self.data_dir, path, "index.md"), 'at') as f:
             f.write("\n")
@@ -462,6 +510,7 @@ class MyClient(discord.Client):
 
         self.regenerate()
         await message.reply(f"Added media to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+        return parent
 
     async def cmd_reply_delete(self, message, parent):
         post = self.get_post_data(parent)
@@ -477,14 +526,16 @@ class MyClient(discord.Client):
             self.regenerate()
             await parent.delete(delay=MESSAGE_DELETE_DELAY)
             await message.reply(f"Deleted post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+            return None
         else:
             await message.reply(f"ERROR: Failed to delete post", delete_after=MESSAGE_DELETE_DELAY)
+            return parent
 
     async def cmd_reply_publish(self, message, parent):
         post = self.get_post_data(parent)
         if not post["is_draft"]:
             await message.reply(f"ERROR: Post is not a draft", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         try:
             shutil.rmtree(post["output_dir"])
@@ -496,17 +547,17 @@ class MyClient(discord.Client):
             shutil.move(post["input_dir"], os.path.join(self.data_dir, path))
         except Exception:
             await message.reply(f"ERROR: Failed to publish post", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         self.regenerate()
-        await parent.edit(content=parent.content.replace("drafted a post", "published a post").replace(post["url_path"], path))
         await message.reply(f"Published post", delete_after=MESSAGE_DELETE_DELAY)
+        return await parent.edit(content=parent.content.replace("drafted a post", "published a post").replace(post["url_path"], path))
 
     async def cmd_reply_unpublish(self, message, parent):
         post = self.get_post_data(parent)
         if post["is_draft"]:
             await message.reply(f"ERROR: Post is already a draft", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         try:
             shutil.rmtree(post["output_dir"])
@@ -518,18 +569,19 @@ class MyClient(discord.Client):
             shutil.move(post["input_dir"], os.path.join(self.data_dir, path))
         except Exception:
             await message.reply(f"ERROR: Failed to unpublish post", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         self.regenerate()
-        await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
+        return await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
 
     async def cmd_regenerate(self, message):
         self.regenerate(defer=False, clean=True)
         await message.reply("Regenerated content", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_help(self, message):
-        await message.reply(HELP_TEXT.format(site_url=self.site_url), delete_after=120)
+        msg = await message.reply(HELP_TEXT.format(site_url=self.site_url))
+        await msg.add_reaction(DELETE_EMOJI)
 
 
 def run_blogbot(**conf):
