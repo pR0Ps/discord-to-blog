@@ -585,12 +585,3 @@ class MyClient(discord.Client):
     async def cmd_help(self, message):
         msg = await message.reply(HELP_TEXT.format(site_url=self.site_url))
         await msg.add_reaction(DELETE_EMOJI)
-
-
-def run_blogbot(**conf):
-    discord.utils.setup_logging(level=logging.INFO)
-
-    token = conf.pop("token")
-
-    client = MyClient(**conf)
-    client.run(token, log_handler=None)
