@@ -315,7 +315,11 @@ class MyClient(discord.Client):
         if not fcn:
             return
 
-        await fcn(message, message)
+        message = await fcn(message, message)
+
+        if message is None:
+            # was deleted
+            return
 
         post = self.get_post_data(message)
         if not post:
@@ -498,7 +502,7 @@ class MyClient(discord.Client):
         media = await self.save_attachments(message, path)
         if not media:
             await message.reply("ERROR: No attached media to add", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         with open(os.path.join(self.data_dir, path, "index.md"), 'at') as f:
             f.write("\n")
@@ -506,6 +510,7 @@ class MyClient(discord.Client):
 
         self.regenerate()
         await message.reply(f"Added media to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+        return parent
 
     async def cmd_reply_delete(self, message, parent):
         post = self.get_post_data(parent)
@@ -521,14 +526,16 @@ class MyClient(discord.Client):
             self.regenerate()
             await parent.delete(delay=MESSAGE_DELETE_DELAY)
             await message.reply(f"Deleted post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
+            return None
         else:
             await message.reply(f"ERROR: Failed to delete post", delete_after=MESSAGE_DELETE_DELAY)
+            return parent
 
     async def cmd_reply_publish(self, message, parent):
         post = self.get_post_data(parent)
         if not post["is_draft"]:
             await message.reply(f"ERROR: Post is not a draft", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         try:
             shutil.rmtree(post["output_dir"])
@@ -540,17 +547,17 @@ class MyClient(discord.Client):
             shutil.move(post["input_dir"], os.path.join(self.data_dir, path))
         except Exception:
             await message.reply(f"ERROR: Failed to publish post", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         self.regenerate()
-        await parent.edit(content=parent.content.replace("drafted a post", "published a post").replace(post["url_path"], path))
         await message.reply(f"Published post", delete_after=MESSAGE_DELETE_DELAY)
+        return await parent.edit(content=parent.content.replace("drafted a post", "published a post").replace(post["url_path"], path))
 
     async def cmd_reply_unpublish(self, message, parent):
         post = self.get_post_data(parent)
         if post["is_draft"]:
             await message.reply(f"ERROR: Post is already a draft", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         try:
             shutil.rmtree(post["output_dir"])
@@ -562,11 +569,11 @@ class MyClient(discord.Client):
             shutil.move(post["input_dir"], os.path.join(self.data_dir, path))
         except Exception:
             await message.reply(f"ERROR: Failed to unpublish post", delete_after=MESSAGE_DELETE_DELAY)
-            return
+            return parent
 
         self.regenerate()
-        await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
+        return await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
 
     async def cmd_regenerate(self, message):
         self.regenerate(defer=False, clean=True)
