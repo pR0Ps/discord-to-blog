@@ -301,9 +301,11 @@ class MyClient(discord.Client):
         if message.author != self.user or message.channel != self._channel:
             return
 
+        emoji = str(reaction.emoji)
+
         # Special case for the help text
         if message.clean_content.endswith(HELP_END):
-            if reaction.emoji == DELETE_EMOJI:
+            if emoji == DELETE_EMOJI:
                 await message.delete()
             return
 
@@ -311,7 +313,7 @@ class MyClient(discord.Client):
             DELETE_EMOJI: self.cmd_reply_delete,
             UNPUBLISH_EMOJI: self.cmd_reply_unpublish,
             PUBLISH_EMOJI: self.cmd_reply_publish,
-        }.get(str(reaction.emoji))
+        }.get(emoji)
         if not fcn:
             return
 
