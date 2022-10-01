@@ -15,10 +15,10 @@ setup(
         "Programming Language :: Python :: 3.8",
     ],
     install_requires = [
-        "discord.py>=1.5.0,<2.0.0",
+        "discord.py>=2.0.0,<3.0.0",
         "Markdown>=3.3.3,<4.0.0",
         "pelican>=4.5.4,<5.0.0",
-        "pyyaml>=5.4.1,<6.0.0",
+        "pyyaml>=5.4.1,<7.0.0",
         "pytz",
     ],
     packages=["discord_to_blog"],

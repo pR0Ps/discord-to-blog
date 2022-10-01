@@ -4,6 +4,7 @@ import asyncio
 from collections import deque
 import os.path
 from datetime import datetime, timedelta
+import logging
 import re
 import shutil
 import subprocess
@@ -15,6 +16,10 @@ import pelican
 import pelican.settings
 import pelican.utils
 import pytz
+
+
+__log__ = logging.getLogger(__name__)
+
 
 HELP_TEXT = """\
 I will publish content you post here to <{site_url}>.
@@ -135,7 +140,15 @@ class MyClient(discord.Client):
         self._process_task = None
         self._regenerate_task = None
         self._prev_posts = {}
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            *args,
+            intents=discord.Intents(
+                guilds=True,
+                guild_messages=True,
+                message_content=True
+            ),
+            **kwargs
+        )
 
     @property
     def output_dir(self):
@@ -152,20 +165,20 @@ class MyClient(discord.Client):
     async def on_ready(self):
         g = discord.utils.get(self.guilds, name=self._guild_name)
         if g is None:
-            print("Guild {} not accessible to bot".format(self._guild_name))
-            await self.logout()
+            __log__.info("Guild %s not accessible to bot", self._guild_name)
+            await self.close()
             return
 
-        print(f"Logged in as {self.user}")
+        __log__.info("Logged in as %s", self.user)
         try:
             self._channel = {x.name: x for x in g.text_channels}[self._channel_name]
         except KeyError:
-            print(f"Bot does not have access to a channel named '{self._channel_name}'")
-            print("Logging out")
-            await self.logout()
+            __log__.info("Bot does not have access to a channel named '#%s'", self._channel_name)
+            __log__.info("Logging out")
+            await self.close()
             return
 
-        print(f"Found channel '{self._channel_name}'")
+        __log__.info("Found channel '#%s'", self._channel_name)
 
         # Configure pelican settings
         PELICAN_SETTINGS.update(self._settings)
@@ -174,7 +187,7 @@ class MyClient(discord.Client):
 
         self._pelican = pelican.Pelican(pelican.settings.read_settings(override=PELICAN_SETTINGS))
 
-        print("Set up the Pelican site generator")
+        __log__.info("Set up the Pelican site generator")
 
     def regenerate(self, defer=True, clean=False):
         if self._regenerate_task:
@@ -290,7 +303,7 @@ class MyClient(discord.Client):
         return msg
 
     def get_datetime(self, message):
-        return pytz.timezone(self._settings["TIMEZONE"]).fromutc(message.created_at)
+        return message.created_at.astimezone(pytz.timezone(self._settings["TIMEZONE"]))
 
     @staticmethod
     def get_path(date, is_draft):
@@ -517,3 +530,12 @@ class MyClient(discord.Client):
 
     async def cmd_help(self, message):
         await message.reply(HELP_TEXT.format(site_url=self.site_url), delete_after=120)
+
+
+def run_blogbot(**conf):
+    discord.utils.setup_logging(level=logging.INFO)
+
+    token = conf.pop("token")
+
+    client = MyClient(**conf)
+    client.run(token, log_handler=None)
