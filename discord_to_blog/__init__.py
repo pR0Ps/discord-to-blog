@@ -295,10 +295,11 @@ class MyClient(discord.Client):
         # Using raw_reaction_add so we can get posts from before we connected
 
         # Must be a user reacting to the bot's messages in the proper channel
-        if reaction.member == self.user:
+        if reaction.member == self.user or reaction.channel_id != self._channel.id:
             return
+
         message = await self._channel.fetch_message(reaction.message_id)
-        if message.author != self.user or message.channel != self._channel:
+        if message.author != self.user:
             return
 
         emoji = str(reaction.emoji)
