@@ -21,8 +21,12 @@ import pytz
 __log__ = logging.getLogger(__name__)
 
 
-HELP_TEXT = """\
-I will publish content you post here to <{site_url}>.
+DELETE_EMOJI = "❌"
+PUBLISH_EMOJI = "✅"
+UNPUBLISH_EMOJI = "✏️"
+
+HELP_END = "Once you no longer need this help, close it with the {} below.".format(DELETE_EMOJI)
+HELP_TEXT = "I will publish content you post here to <{site_url}>" + """
 
 Usage:
  - Just write a message and attach some media to post it.
@@ -30,17 +34,16 @@ Usage:
  - If your message had a blank line in it, anything before the blank line will be the title, anything after will be added to the post contents.
 
 When I create posts, I will post a message in this chat with a link to them. You can perform actions on the post by replying to the message with the following commands:
- - `publish`: If the post is a draft, it will be published
- - `unpublish`: If the post is published, it will be converted to a draft and hidden from the site
- - `delete`: Deletes the post
+ - `publish` ({}): If the post is a draft, it will be published
+ - `unpublish` ({}): If the post is published, it will be converted to a draft and hidden from the site
+ - `delete` ({}): Deletes the post
  - `add`: Adds all media attached to the message to the post
 
 I also respond to the following commands:
  - `help`: shows this message
  - `regenerate`: forces the website to refresh its contents
 
-Once you no longer need this help, close it with the ❌ below.
-"""
+""".format(PUBLISH_EMOJI, UNPUBLISH_EMOJI, DELETE_EMOJI) + HELP_END
 
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
 
@@ -254,6 +257,7 @@ class MyClient(discord.Client):
                 msg = await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
             else:
                 msg = await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
+            await self.apply_reactions(msg, is_draft=is_draft)
 
             # Store message in case we need to implicitly add to it later
             self._prev_posts[message.author.id] = msg
@@ -287,14 +291,45 @@ class MyClient(discord.Client):
         self._queue.append(message)
         self._process_task = call_later(MESSAGE_DEBOUNCE_DELAY, self.process_queue)
 
-    async def on_reaction_add(self, reaction, user):
-        # Only handle other users reacting to the bot's messages
-        if user == self.user or reaction.message.author != self.user:
+    async def on_raw_reaction_add(self, reaction):
+        # Using raw_reaction_add so we can get posts from before we connected
+
+        # Must be a user reacting to the bot's messages in the proper channel
+        if reaction.member == self.user:
+            return
+        message = await self._channel.fetch_message(reaction.message_id)
+        if message.author != self.user or message.channel != self._channel:
             return
 
-        # Delete messages that users react with an ❌ to
-        if reaction.emoji == "❌":
-            await reaction.message.delete()
+        # Special case for the help text
+        if message.clean_content.endswith(HELP_END):
+            if reaction.emoji == DELETE_EMOJI:
+                await message.delete()
+            return
+
+        fcn = {
+            DELETE_EMOJI: self.cmd_reply_delete,
+            UNPUBLISH_EMOJI: self.cmd_reply_unpublish,
+            PUBLISH_EMOJI: self.cmd_reply_publish,
+        }.get(str(reaction.emoji))
+        if not fcn:
+            return
+
+        await fcn(message, message)
+
+        post = self.get_post_data(message)
+        if not post:
+            await message.clear_reactions()
+        else:
+            await self.apply_reactions(message, is_draft=post["is_draft"])
+
+    async def apply_reactions(self, message, is_draft):
+        await message.clear_reactions()
+        await message.add_reaction(DELETE_EMOJI)
+        if is_draft:
+            await message.add_reaction(PUBLISH_EMOJI)
+        else:
+            await message.add_reaction(UNPUBLISH_EMOJI)
 
     async def find_implicit_parent(self, message):
         # Only implicitly add if the message has no text in it
@@ -539,7 +574,7 @@ class MyClient(discord.Client):
 
     async def cmd_help(self, message):
         msg = await message.reply(HELP_TEXT.format(site_url=self.site_url))
-        await msg.add_reaction("❌")
+        await msg.add_reaction(DELETE_EMOJI)
 
 
 def run_blogbot(**conf):
