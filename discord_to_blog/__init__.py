@@ -39,8 +39,7 @@ I also respond to the following commands:
  - `help`: shows this message
  - `regenerate`: forces the website to refresh its contents
 
-
-This message will self-destruct in 2 minutes.
+Once you no longer need this help, close it with the ❌ below.
 """
 
 CLEAN_FILENAME = str.maketrans(" ", "_", "\\/[](){})")
@@ -145,7 +144,8 @@ class MyClient(discord.Client):
             intents=discord.Intents(
                 guilds=True,
                 guild_messages=True,
-                message_content=True
+                guild_reactions=True,
+                message_content=True,
             ),
             **kwargs
         )
@@ -286,6 +286,15 @@ class MyClient(discord.Client):
             self._process_task.cancel()
         self._queue.append(message)
         self._process_task = call_later(MESSAGE_DEBOUNCE_DELAY, self.process_queue)
+
+    async def on_reaction_add(self, reaction, user):
+        # Only handle other users reacting to the bot's messages
+        if user == self.user or reaction.message.author != self.user:
+            return
+
+        # Delete messages that users react with an ❌ to
+        if reaction.emoji == "❌":
+            await reaction.message.delete()
 
     async def find_implicit_parent(self, message):
         # Only implicitly add if the message has no text in it
@@ -529,7 +538,8 @@ class MyClient(discord.Client):
         await message.reply("Regenerated content", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_help(self, message):
-        await message.reply(HELP_TEXT.format(site_url=self.site_url), delete_after=120)
+        msg = await message.reply(HELP_TEXT.format(site_url=self.site_url))
+        await msg.add_reaction("❌")
 
 
 def run_blogbot(**conf):
