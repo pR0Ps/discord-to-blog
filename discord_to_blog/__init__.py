@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import deque
+import functools
 import os.path
 from datetime import datetime, timedelta
 import logging
@@ -120,6 +121,35 @@ def call_later(seconds, callback):
             callback()
     return asyncio.ensure_future(f())
 
+
+def debounced(delay, func=None):
+    if func is None:
+        return lambda f: debounced(delay, func=f)
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        async with wrapper._lock:
+            if wrapper._sleep:
+                wrapper._sleep.cancel()
+                # yield control to the loop so things awaiting wrapper._sleep
+                # have the opportunity to be cancelled
+                # TODO: improve this
+                await asyncio.sleep(0.01)
+            wrapper._sleep = asyncio.create_task(asyncio.sleep(delay))
+
+        try:
+            await wrapper._sleep
+        except asyncio.CancelledError:
+            return
+
+        return await func(*args, **kwargs)
+
+    wrapper._sleep = None
+    wrapper._lock = asyncio.Lock()
+
+    return wrapper
+
+
 class MyClient(discord.Client):
 
     def __init__(self, *args, guild_name, channel, data_dir, output_dir, base_url, site_name, timezone, **kwargs):
@@ -139,7 +169,6 @@ class MyClient(discord.Client):
         self._pelican = None
 
         self._queue = deque()
-        self._process_task = None
         self._regenerate_task = None
         self._prev_posts = {}
         super().__init__(
@@ -265,6 +294,7 @@ class MyClient(discord.Client):
             await message.reply("ERROR: Failed to post - no content or attached media", delete_after=MESSAGE_DELETE_DELAY)
         await message.delete()
 
+    @debounced(MESSAGE_DEBOUNCE_DELAY)
     async def process_queue(self):
         lst = []
         while self._queue:
@@ -284,12 +314,12 @@ class MyClient(discord.Client):
         elif message.channel != self._channel:
             return
 
-        # Add the message to the queue to process and wait for any followups
-        # This allows for processing messages synchronously
-        if self._process_task:
-            self._process_task.cancel()
+        # Add the message to the queue and tries to process it The
+        # process_queue function is debounced so it will wait for input to stop
+        # before it actually processes the queued messages.
+        # This allows for waiting for follow-up messages and processing everything synchronously.
         self._queue.append(message)
-        self._process_task = call_later(MESSAGE_DEBOUNCE_DELAY, self.process_queue)
+        await self.process_queue()
 
     async def on_raw_reaction_add(self, reaction):
         # Using raw_reaction_add so we can get posts from before we connected
