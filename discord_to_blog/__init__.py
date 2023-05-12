@@ -9,6 +9,7 @@ import logging
 import re
 import shutil
 import subprocess
+import time
 from urllib.parse import urlparse
 
 import discord
@@ -112,15 +113,6 @@ PELICAN_SETTINGS.update({
     "MENU_INTERNAL_PAGES": (('Archives', PELICAN_SETTINGS["ARCHIVES_URL"], PELICAN_SETTINGS["ARCHIVES_SAVE_AS"]),),
 })
 
-def call_later(seconds, callback):
-    async def f():
-        await asyncio.sleep(seconds)
-        if asyncio.iscoroutinefunction(callback):
-            await callback()
-        else:
-            callback()
-    return asyncio.ensure_future(f())
-
 
 def debounced(delay, func=None):
     if func is None:
@@ -169,7 +161,8 @@ class MyClient(discord.Client):
         self._pelican = None
 
         self._queue = deque()
-        self._regenerate_task = None
+        self._regen_lock = asyncio.Lock()
+        self._regen_start = 0
         self._prev_posts = {}
         super().__init__(
             *args,
@@ -221,17 +214,26 @@ class MyClient(discord.Client):
 
         __log__.info("Set up the Pelican site generator")
 
-    def regenerate(self, defer=True, clean=False):
-        if self._regenerate_task:
-            self._regenerate_task.cancel()
-
+    async def regenerate(self, wait=False, clean=False):
         if clean:
             pelican.utils.clean_output_dir(self._pelican.output_path, self._pelican.output_retention)
 
-        if defer:
-            self._regenerate_task = call_later(REGENERATE_DEBOUNCE_DELAY, self._pelican.run)
+        if not wait:
+            # store ref to avoid the GC killing it
+            self._regen_fut = asyncio.ensure_future(self._regenerate())
         else:
-            self._pelican.run()
+            await self._regenerate()
+
+    @debounced(REGENERATE_DEBOUNCE_DELAY)
+    async def _regenerate(self):
+        # note the time the regen was requested so we can ignore the request if
+        # the site is already up to date
+        request_time = time.time()
+        async with self._regen_lock:
+            if self._regen_start > request_time:
+                return
+            self._regen_start = time.time()
+            await asyncio.to_thread(self._pelican.run)
 
     async def dispatch_command(self, message):
         command = message.clean_content.strip().lower()
@@ -281,11 +283,10 @@ class MyClient(discord.Client):
         # Not a command - treat it as an upload
         title, path, is_draft = await self.make_post(message)
         if path:
-            self.regenerate()
-            if is_draft:
-                msg = await self._channel.send(content=f"{message.author.mention} drafted a post titled \"{title}\": <{self.site_url}/{path}>")
-            else:
-                msg = await self._channel.send(content=f"{message.author.mention} published a post titled \"{title}\": <{self.site_url}/{path}>")
+            await self.regenerate()
+            msg = await self._channel.send(
+                content=f"{message.author.mention} {'drafted' if is_draft else 'published'} a post titled \"{title}\": <{self.site_url}/{path}>"
+            )
             await self.apply_reactions(msg, is_draft=is_draft)
 
             # Store message in case we need to implicitly add to it later
@@ -541,7 +542,7 @@ class MyClient(discord.Client):
             f.write("\n")
             f.write("\n".join(self.embed_media(x) for x in media))
 
-        self.regenerate()
+        await self.regenerate()
         await message.reply(f"Added media to post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
         return parent
 
@@ -556,7 +557,7 @@ class MyClient(discord.Client):
                     path = None
 
         if path:
-            self.regenerate()
+            await self.regenerate()
             await parent.delete(delay=MESSAGE_DELETE_DELAY)
             await message.reply(f"Deleted post <{self.site_url}/{path}>", delete_after=MESSAGE_DELETE_DELAY)
             return None
@@ -582,7 +583,7 @@ class MyClient(discord.Client):
             await message.reply(f"ERROR: Failed to publish post", delete_after=MESSAGE_DELETE_DELAY)
             return parent
 
-        self.regenerate()
+        await self.regenerate()
         await message.reply(f"Published post", delete_after=MESSAGE_DELETE_DELAY)
         return await parent.edit(content=parent.content.replace("drafted a post", "published a post").replace(post["url_path"], path))
 
@@ -604,12 +605,12 @@ class MyClient(discord.Client):
             await message.reply(f"ERROR: Failed to unpublish post", delete_after=MESSAGE_DELETE_DELAY)
             return parent
 
-        self.regenerate()
+        await self.regenerate()
         await message.reply(f"Unpublished post", delete_after=MESSAGE_DELETE_DELAY)
         return await parent.edit(content=parent.content.replace("published a post", "drafted a post").replace(post["url_path"], path))
 
     async def cmd_regenerate(self, message):
-        self.regenerate(defer=False, clean=True)
+        await self.regenerate(wait=True, clean=True)
         await message.reply("Regenerated content", delete_after=MESSAGE_DELETE_DELAY)
 
     async def cmd_help(self, message):
