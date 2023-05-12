@@ -17,7 +17,7 @@ Instructions
 ------------
 1. Create a Discord bot (see <https://discordpy.readthedocs.io/en/latest/discord.html>) with the
    following permissions:
-    - Manage Messages (to delete messages)
+    - Manage Messages (to delete messages and manage reactions to them)
     - Send Messages
 2. Install `discord-to-blog` using `pip` (`pip install git+https://github.com/pR0Ps/discord-to-blog`)
 3. Create a `settings.yml` file based off the example below:
