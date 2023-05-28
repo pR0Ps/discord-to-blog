@@ -410,6 +410,7 @@ class MyClient(discord.Client):
 
         title, *content = content.split("\n\n", 1)
         content = content[0] if content else ""
+        title = title.replace("\n", " ")
 
         if title.lower().startswith(DRAFT_PREFIX):
             is_draft = True
