@@ -21,6 +21,7 @@ setup(
         "pelican>=4.5.4,<5.0.0",
         "pyyaml>=5.4.1,<7.0.0",
         "pytz",
+        "setuptools",
     ],
     packages=["discord_to_blog"],
     package_data={"discord_to_blog": ["theme/*", "theme/*/*", "theme/*/*/*"]}, # ugh
