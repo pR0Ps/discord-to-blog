@@ -80,6 +80,7 @@ PELICAN_SETTINGS = {
     "DEFAULT_PAGINATION": 5,
     "SUMMARY_MAX_LENGTH": None,
     "STATIC_PATHS": ["."],
+    "STATIC_CHECK_IF_MODIFIED": True,
 
     # Only generate pages for articles and archives
     "DIRECT_TEMPLATES": ["index", "archives"],
