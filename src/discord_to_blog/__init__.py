@@ -8,16 +8,21 @@ from datetime import datetime, timedelta
 import logging
 import re
 import shutil
-import subprocess
+import sys
 import time
 from urllib.parse import urlparse
 
 import discord
-import pkg_resources
 import pelican
 import pelican.settings
 import pelican.utils
 import pytz
+
+if sys.version_info < (3, 12):
+    # support for using as_file with direectories was added in Python 3.12
+    import importlib_resources as il_resources
+else:
+    import importlib.resources as il_resources
 
 
 __log__ = logging.getLogger(__name__)
@@ -108,11 +113,6 @@ PELICAN_SETTINGS.update({
     "DRAFT_SAVE_AS": "{}/index.html".format(PELICAN_SETTINGS["DRAFT_URL"]),
     "ARCHIVES_SAVE_AS": "{}/index.html".format(PELICAN_SETTINGS["ARCHIVES_URL"]),
 })
-PELICAN_SETTINGS.update({
-    # Theme settings
-    "THEME": pkg_resources.resource_filename(__name__, "theme"),
-    "MENU_INTERNAL_PAGES": (('Archives', PELICAN_SETTINGS["ARCHIVES_URL"], PELICAN_SETTINGS["ARCHIVES_SAVE_AS"]),),
-})
 
 
 def debounced(delay, func=None):
@@ -160,6 +160,7 @@ class MyClient(discord.Client):
 
         self._channel = None
         self._pelican = None
+        self._theme_dir = None
 
         self._queue = deque()
         self._regen_lock = asyncio.Lock()
@@ -187,6 +188,23 @@ class MyClient(discord.Client):
     @property
     def site_url(self):
         return self._settings["SITEURL"]
+
+    def __enter__(self):
+        # apply theme settings
+        self._theme_dir = il_resources.as_file(il_resources.files() / "theme")
+        PELICAN_SETTINGS.update({
+            # Theme settings
+            "THEME": str(self._theme_dir.__enter__()),
+            "MENU_INTERNAL_PAGES": (
+                ('Archives', PELICAN_SETTINGS["ARCHIVES_URL"], PELICAN_SETTINGS["ARCHIVES_SAVE_AS"]),
+            ),
+        })
+        return self
+
+    def __exit__(self, *args):
+        # clean up theme
+        if self._theme_dir:
+            self._theme_dir.__exit__(*args)
 
     async def on_ready(self):
         g = discord.utils.get(self.guilds, name=self._guild_name)

@@ -11,7 +11,7 @@ I wrote this so that myself and others would be able to easily publish images to
 already use Discord, I wanted to experiment with using it as the input mechanism.
 
 Since this is an experiment, it's in a "mostly works" state. There are probably a bunch of unhandled
-edge cases and it bundles its own hardcoded theme ([Blue Penguin][]).
+edge cases and it bundles its own hardcoded theme ([Blue Penguin][]) (with some modifications).
 
 Instructions
 ------------

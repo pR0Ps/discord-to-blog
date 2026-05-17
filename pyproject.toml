@@ -1,0 +1,29 @@
+[project]
+name = "discord-to-blog"
+version = "0.0.1"
+description = "A Discord bot that generates a static blog from posts in a channel"
+urls.repository = "https://github.com/pR0Ps/discord-to-blog"
+readme = "README.md"
+license = "GPL-3.0-only"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
+]
+requires-python = ">=3.9"
+dependencies = [
+  "discord.py>=2.0.0,<3.0.0",
+  "Markdown>=3.3.3,<4.0.0",
+  "pelican>=4.5.4,<5.0.0",
+  "pyyaml>=5.4.1,<7.0.0",
+  "pytz",
+  "importlib_resources>=5.12; python_version<'3.12'",
+]
+scripts.discord-to-blog = "discord_to_blog.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+packages = ["src/"]

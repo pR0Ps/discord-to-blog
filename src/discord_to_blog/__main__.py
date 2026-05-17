@@ -37,9 +37,8 @@ def main():
 
     token = conf.pop("token")
 
-    client = MyClient(**conf)
-    client.run(token, log_handler=None)
-
+    with MyClient(**conf) as client:
+        client.run(token, log_handler=None)
 
 if __name__ == "__main__":
     main()
